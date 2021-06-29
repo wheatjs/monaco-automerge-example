@@ -16,8 +16,9 @@ io.on('connection', async (socket) => {
     if (reserved.includes(eventName))
       return
 
-    socket.emit(eventName, data)
-    // socket.broadcast.emit(eventName, data)
+    // socket.
+    // socket.emit(eventName, data)
+    socket.broadcast.emit(eventName, data)
   })
 })
 

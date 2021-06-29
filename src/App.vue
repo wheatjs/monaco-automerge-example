@@ -56,8 +56,6 @@ onMounted(() => {
         changes = new Uint8Array(changes)
         doc = automerge.applyChanges(doc, [changes])[0]
 
-        // console.log(doc.text.toString())
-
         pauseUpdate = true
         model.setValue(doc.text.toString())
         pauseUpdate = false
