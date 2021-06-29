@@ -10,15 +10,6 @@ let pauseUpdate = false
 let doc = automerge.init()
 let doc2 = automerge.init()
 
-function arrayToBase64String(a: Uint8Array) {
-  return btoa(String.fromCharCode(...a));
-}
-
-function base64StringToArray(s: string) {
-  const asciiString = atob(s);
-  return new Uint8Array([...asciiString].map((char) => char.charCodeAt(0)));
-}
-
 onMounted(() => {
   const client = io('ws://localhost:4000')
 
@@ -35,7 +26,7 @@ onMounted(() => {
           return
 
         const change = e.changes[0]
-        doc = automerge.change(doc, (_doc: any) => {
+        let newdoc = automerge.change(doc, (_doc: any) => {
           if (!_doc.text)
             _doc.text = new automerge.Text()
 
@@ -47,17 +38,61 @@ onMounted(() => {
           }
         })
 
-        const changes = automerge.getAllChanges(doc)
+        const changes = automerge.getChanges(doc, newdoc)
+        doc = newdoc
         client.emit('change', new Blob(changes))
       })
 
       client.on('change', async (changes) => {
         changes = await new Response(changes).arrayBuffer()
         changes = new Uint8Array(changes)
-        doc = automerge.applyChanges(doc, [changes])[0]
+        let x = automerge.applyChanges(doc, [changes])
+
+        doc = x[0]
+        let patches = x[1]
 
         pauseUpdate = true
-        model.setValue(doc.text.toString())
+
+        // Manually apply the patches to the editor
+        if (patches.diffs.props.text) {
+          Object.values(patches.diffs.props.text).forEach(({ edits }) => {
+            edits.forEach((edit: any) => {
+              if (edit.action === 'insert') {
+                const { lineNumber, column } = model.getPositionAt(edit.index)
+                const op = {
+                  identifier: edit.opId,
+                  range: new monaco.Range(lineNumber, column, lineNumber, column),
+                  text: edit.value.value,
+                  forceMoveMarkers: true
+                }
+
+                editor.executeEdits('autmerge', [op])
+              } else if (edit.action === 'remove') {
+                const { lineNumber: startLineNumber, column: startLineColumn } = model.getPositionAt(edit.index)
+                const { lineNumber: endLineNumber, column: endLineColumn } = model.getPositionAt(edit.index + edit.count)
+                const op = {
+                  identifier: edit.opId,
+                  range: new monaco.Range(startLineNumber, startLineColumn, endLineNumber, endLineColumn),
+                  text: null,
+                  forceMoveMarkers: true
+                }
+
+                editor.executeEdits('autmerge', [op])
+              } else if (edit.action === 'multi-insert') {
+                const { lineNumber, column } = model.getPositionAt(edit.index)
+                const op = {
+                  identifier: edit.opId,
+                  range: new monaco.Range(lineNumber, column, lineNumber, column),
+                  text: edit.values.join(''),
+                  forceMoveMarkers: true
+                }
+
+                editor.executeEdits('autmerge', [op])
+              }
+            })
+          })
+        }
+
         pauseUpdate = false
       })
 
